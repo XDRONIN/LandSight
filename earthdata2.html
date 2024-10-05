@@ -7,6 +7,21 @@
   </head>
   <body>
     <h1>Landsat Data Fetch</h1>
+
+    <!-- User Input Section -->
+    <label for="coordinates"
+      >Coordinates (lonMin, latMin, lonMax, latMax):</label
+    >
+    <input type="text" id="coordinates" value="-118.5, 34.0, -117.5, 35.0" />
+
+    <label for="startDate">Start Date:</label>
+    <input type="date" id="startDate" value="2024-10-01" />
+
+    <label for="endDate">End Date:</label>
+    <input type="date" id="endDate" value="2024-10-05" />
+
+    <button id="fetchButton">Fetch Data</button>
+
     <div id="output"></div>
 
     <script>
@@ -38,6 +53,10 @@
               );
             }
             const data = await response.json();
+
+            // Log the full data to inspect its structure
+            console.log("Fetched Data:", JSON.stringify(data, null, 2));
+
             return data;
           } catch (error) {
             console.error("Error fetching data:", error);
@@ -91,6 +110,14 @@
               )
               .map((link) => link.href) || [];
 
+          // Attempt to extract cloud cover
+          const cloudCover =
+            entry.cloud_cover || entry.metadata?.cloud_cover || "N/A"; // Adjust based on the actual JSON structure.
+
+          // Extract acquisition start and end dates
+          const timeStart = entry.time_start || "N/A";
+          const timeEnd = entry.time_end || "N/A";
+
           // Extract metadata
           const metadata = {
             id: entry.id,
@@ -102,8 +129,9 @@
               latitude,
               longitude,
             },
-            time_start: entry.time_start,
-            time_end: entry.time_end,
+            time_start: timeStart, // Include time_start
+            time_end: timeEnd, // Include time_end
+            cloudCover: cloudCover, // Add cloud cover to metadata
             tifLinks: tifLinks,
           };
 
@@ -116,31 +144,39 @@
         return processedResults;
       }
 
-      // Example usage
-      const coordinates = [-118.5, 34.0, -117.5, 35.0]; // [lonMin, latMin, lonMax, latMax]
-      const startDate = "2024-10-01";
-      const endDate = "2024-10-05";
+      // Fetch data on button click
+      document.getElementById("fetchButton").addEventListener("click", () => {
+        const coordsInput = document
+          .getElementById("coordinates")
+          .value.split(",")
+          .map(Number);
+        const startDate = document.getElementById("startDate").value;
+        const endDate = document.getElementById("endDate").value;
 
-      fetchLandsatData(coordinates, startDate, endDate)
-        .then((results) => {
-          const outputDiv = document.getElementById("output");
-          outputDiv.innerHTML = `Processed ${results.length} scenes.<br><br>`;
-          results.forEach((result, index) => {
-            outputDiv.innerHTML += `
-            <b>Scene ${index + 1}:</b><br>
-            ID: ${result.id}<br>
-            Title: ${result.title}<br>
-            Coordinate: Latitude: ${result.coordinate.latitude}, Longitude: ${
-              result.coordinate.longitude
-            }<br>
-            TIF Links:<br> ${result.tifLinks
-              .map((link) => `${link}<br>`)
-              .join("")}
-            <br>
-          `;
-          });
-        })
-        .catch((error) => console.error("Error:", error));
+        fetchLandsatData(coordsInput, startDate, endDate)
+          .then((results) => {
+            const outputDiv = document.getElementById("output");
+            outputDiv.innerHTML = `Processed ${results.length} scenes.<br><br>`;
+            results.forEach((result, index) => {
+              outputDiv.innerHTML += `
+                <b>Scene ${index + 1}:</b><br>
+                ID: ${result.id}<br>
+                Title: ${result.title}<br>
+                Coordinate: Latitude: ${
+                  result.coordinate.latitude
+                }, Longitude: ${result.coordinate.longitude}<br>
+                Cloud Cover: ${result.cloudCover}<br>
+                Acquisition Start Date: ${result.time_start}<br>
+                Acquisition End Date: ${result.time_end}<br>
+                TIF Links:<br> ${result.tifLinks
+                  .map((link) => `${link}<br>`)
+                  .join("")}
+                <br>
+              `;
+            });
+          })
+          .catch((error) => console.error("Error:", error));
+      });
     </script>
   </body>
 </html>

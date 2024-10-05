@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Landsat Data Fetch</title>
+  </head>
+  <body>
+    <h1>Landsat Data Fetch</h1>
+    <div id="output"></div>
+
+    <script>
+      async function fetchLandsatData(coordinates, startDate, endDate) {
+        const [lonMin, latMin, lonMax, latMax] = coordinates;
+        const baseUrl = "https://cmr.earthdata.nasa.gov/search/granules.json";
+        const pageSize = 50;
+        let page = 1;
+        let allResults = [];
+
+        const params = new URLSearchParams({
+          collection_concept_id: "C2021957657-LPCLOUD",
+          temporal: `${startDate}T00:00:00Z,${endDate}T23:59:59Z`,
+          bounding_box: `${lonMin},${latMin},${lonMax},${latMax}`,
+          page_size: pageSize,
+          page_num: page,
+        });
+
+        async function fetchPage() {
+          const url = `${baseUrl}?${params.toString()}`;
+          console.log("Fetching URL:", url);
+          try {
+            const response = await fetch(url);
+            if (!response.ok) {
+              const errorBody = await response.text();
+              console.error("Error response body:", errorBody);
+              throw new Error(
+                `HTTP error! Status: ${response.status}, Body: ${errorBody}`
+              );
+            }
+            const data = await response.json();
+            return data;
+          } catch (error) {
+            console.error("Error fetching data:", error);
+            return null;
+          }
+        }
+
+        let hasMorePages = true;
+        while (hasMorePages) {
+          console.log(`Fetching page ${page}...`);
+          const data = await fetchPage();
+
+          if (!data) {
+            console.log("No data returned, stopping pagination.");
+            hasMorePages = false;
+          } else if (
+            !data.feed ||
+            !data.feed.entry ||
+            data.feed.entry.length === 0
+          ) {
+            console.log("No entries in feed, stopping pagination.");
+            hasMorePages = false;
+          } else {
+            allResults = allResults.concat(data.feed.entry);
+            console.log(`Fetched ${data.feed.entry.length} entries.`);
+            if (data.feed.entry.length < pageSize) {
+              console.log("Fetched less than page size, stopping pagination.");
+              hasMorePages = false;
+            } else {
+              page++;
+              params.set("page_num", page);
+            }
+          }
+        }
+
+        console.log(`Total results fetched: ${allResults.length}`);
+
+        // Process and extract relevant data
+        const processedResults = allResults.map((entry, index) => {
+          const latitude = entry.polygons?.[0]?.[0]?.split(" ")[1] || "N/A";
+          const longitude = entry.polygons?.[0]?.[0]?.split(" ")[0] || "N/A";
+
+          // Extract only .tif links that start with HTTP
+          const tifLinks =
+            entry.links
+              ?.filter(
+                (link) =>
+                  link.href &&
+                  link.href.toLowerCase().startsWith("http") &&
+                  link.href.toLowerCase().endsWith(".tif")
+              )
+              .map((link) => link.href) || [];
+
+          // Extract metadata
+          const metadata = {
+            id: entry.id,
+            title: entry.title,
+            updated: entry.updated,
+            dataset_id: entry.dataset_id,
+            data_center: entry.data_center,
+            coordinate: {
+              latitude,
+              longitude,
+            },
+            time_start: entry.time_start,
+            time_end: entry.time_end,
+            tifLinks: tifLinks,
+          };
+
+          console.log(`\nProcessed Entry ${index + 1}:`);
+          console.log(JSON.stringify(metadata, null, 2));
+
+          return metadata;
+        });
+
+        return processedResults;
+      }
+
+      // Example usage
+      const coordinates = [-118.5, 34.0, -117.5, 35.0]; // [lonMin, latMin, lonMax, latMax]
+      const startDate = "2024-10-01";
+      const endDate = "2024-10-05";
+
+      fetchLandsatData(coordinates, startDate, endDate)
+        .then((results) => {
+          const outputDiv = document.getElementById("output");
+          outputDiv.innerHTML = `Processed ${results.length} scenes.<br><br>`;
+          results.forEach((result, index) => {
+            outputDiv.innerHTML += `
+            <b>Scene ${index + 1}:</b><br>
+            ID: ${result.id}<br>
+            Title: ${result.title}<br>
+            Coordinate: Latitude: ${result.coordinate.latitude}, Longitude: ${
+              result.coordinate.longitude
+            }<br>
+            TIF Links:<br> ${result.tifLinks
+              .map((link) => `${link}<br>`)
+              .join("")}
+            <br>
+          `;
+          });
+        })
+        .catch((error) => console.error("Error:", error));
+    </script>
+  </body>
+</html>

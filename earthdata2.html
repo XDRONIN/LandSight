@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Landsat Data Fetch with 3x3 Grid</title>
+    <style>
+      .highlight {
+        text-decoration: underline;
+        color: red;
+      }
+    </style>
   </head>
   <body>
     <h1>Landsat Data Fetch</h1>
@@ -26,8 +32,26 @@
     <div id="output"></div>
 
     <script>
-      const pixelLongitude = 16.043;
-      const pixelLatitude = 45.703;
+      const pixelLongitude = 77.382; // Target pixel longitude
+      const pixelLatitude = 12.42; // Target pixel latitude
+
+      // Function to check if a point is inside a bounding box
+      function isPointInsideBoundingBox(lon, lat, boundingBox) {
+        if (!boundingBox || boundingBox.length !== 4) {
+          console.error("Invalid bounding box:", boundingBox);
+          return false;
+        }
+
+        const [lonMin, latMin, lonMax, latMax] = boundingBox;
+        console.log(`Checking point (${lon}, ${lat}) against bounding box:`, {
+          lonMin,
+          latMin,
+          lonMax,
+          latMax,
+        });
+
+        return lon >= lonMin && lon <= lonMax && lat >= latMin && lat <= latMax;
+      }
 
       // Function to calculate a 3x3 grid's coordinates
       function calculate3x3Grid(lon, lat, stepLon = 0.1, stepLat = 0.1) {
@@ -36,15 +60,6 @@
         const latMin = lat - stepLat;
         const latMax = lat + stepLat;
 
-        // Log the bounding box for debugging
-        console.log("Calculated Bounding Box:", [
-          lonMin,
-          latMin,
-          lonMax,
-          latMax,
-        ]);
-
-        // Return the calculated bounding box
         return [lonMin, latMin, lonMax, latMax];
       }
 
@@ -63,9 +78,6 @@
           page_size: pageSize,
           page_num: page,
         });
-
-        // Log the URL for debugging
-        console.log("Fetch URL:", `${baseUrl}?${params.toString()}`);
 
         async function fetchPage() {
           const url = `${baseUrl}?${params.toString()}`;
@@ -108,8 +120,9 @@
         }
 
         const processedResults = allResults.map((entry) => {
-          const latitude = entry.polygons?.[0]?.[0]?.split(" ")[1] || "N/A";
-          const longitude = entry.polygons?.[0]?.[0]?.split(" ")[0] || "N/A";
+          const boundingPolygon = entry.polygons?.[0]?.[0]?.split(" ") || [];
+          const latitude = boundingPolygon[1] || "N/A";
+          const longitude = boundingPolygon[0] || "N/A";
           const tifLinks =
             entry.links
               ?.filter(
@@ -122,9 +135,15 @@
           const cloudCover = entry.cloud_cover || "N/A";
           const timeStart = entry.time_start || "N/A";
           const timeEnd = entry.time_end || "N/A";
+
+          // Parse bounding box correctly
+          const boundingBox = entry.bounding_box?.[0]?.split(",").map(Number);
+          console.log("Bounding box for entry:", boundingBox);
+
           return {
             id: entry.id,
             title: entry.title,
+            boundingBox: boundingBox || [],
             coordinate: { latitude, longitude },
             time_start: timeStart,
             time_end: timeEnd,
@@ -145,13 +164,26 @@
         const startDate = document.getElementById("startDate").value;
         const endDate = document.getElementById("endDate").value;
 
-        console.log("Fetching data with coordinates:", coordsInput);
-
         fetchLandsatData(coordsInput, startDate, endDate)
           .then((results) => {
             const outputDiv = document.getElementById("output");
             outputDiv.innerHTML = `Processed ${results.length} scenes.<br><br>`;
             results.forEach((result, index) => {
+              const isTargetScene = isPointInsideBoundingBox(
+                pixelLongitude,
+                pixelLatitude,
+                result.boundingBox
+              );
+
+              const tifLinksHtml = result.tifLinks
+                .map(
+                  (link) =>
+                    `<a href="${link}" ${
+                      isTargetScene ? 'class="highlight"' : ""
+                    }>${link}</a><br>`
+                )
+                .join("");
+
               outputDiv.innerHTML += `
                 <b>Scene ${index + 1}:</b><br>
                 ID: ${result.id}<br>
@@ -162,9 +194,7 @@
                 Cloud Cover: ${result.cloudCover}<br>
                 Acquisition Start Date: ${result.time_start}<br>
                 Acquisition End Date: ${result.time_end}<br>
-                TIF Links:<br> ${result.tifLinks
-                  .map((link) => `${link}<br>`)
-                  .join("")}
+                TIF Links:<br> ${tifLinksHtml}
                 <br>
               `;
             });
@@ -181,7 +211,6 @@
           // Update the coordinates input field with the new bounding box
           document.getElementById("coordinates").value = boundingBox.join(", ");
 
-          // Log the new coordinates for debugging
           console.log("Generated 3x3 Grid Bounding Box:", boundingBox);
         });
     </script>
